@@ -115,14 +115,14 @@ main(void)
 
     // Create Device timer event objects
     cudaEvent_t start , stop ;
-    float d_msecs ;
+    float d_msecs1, d_msecs2 ;
     cudaEventCreate (& start );
     cudaEventCreate (& stop ) ;
 
 
 
     // Print the vector length to be used, and compute its size
-    int numElements = 50000;
+    int numElements = 9320446;
     size_t size = numElements * sizeof(float);
     printf("[Vector addition of %d elements]\n", numElements);
 
@@ -199,10 +199,10 @@ main(void)
     err = cudaGetLastError();
     CUDA_ERROR(err, "Failed to launch vectorAdd kernel");
 
-    err = cudaEventElapsedTime( &d_msecs, start, stop );
+    err = cudaEventElapsedTime( &d_msecs1, start, stop );
     CUDA_ERROR(err, "Failed to get elapsed time");
 
-    printf("Executed vector add of %d elements on the Device in a SINGLE THREAD in = %.5fmSecs\n", numElements, d_msecs);
+    printf("Executed vector add of %d elements on the Device in a SINGLE THREAD in = %.5fmSecs\n", numElements, d_msecs1);
 
 
 
@@ -218,7 +218,7 @@ main(void)
 
 
     // Launch the Vector Add CUDA Kernel
-    int threadsPerBlock = 256;
+    int threadsPerBlock = 1024;
 
     // Note this pattern, based on integer division, for rounding up
     int blocksPerGrid = 1 + ((numElements - 1) / threadsPerBlock);
@@ -240,11 +240,11 @@ main(void)
     err = cudaGetLastError();
     CUDA_ERROR(err, "Failed to launch vectorAdd kernel");
 
-    err = cudaEventElapsedTime( &d_msecs, start, stop );
+    err = cudaEventElapsedTime( &d_msecs2, start, stop );
     CUDA_ERROR(err, "Failed to get elapsed time");
 
     printf("Executed vector add of %d elements on the Device in %d blocks of %d threads in = %.5fmSecs\n",
-    		numElements, blocksPerGrid, threadsPerBlock, d_msecs);
+    		numElements, blocksPerGrid, threadsPerBlock, d_msecs2);
 
 
 
