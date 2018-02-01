@@ -60,7 +60,52 @@ single_thread_bscan(const float *A, float *B, int numElements)
 __global__ void
 hsh_nsm_bscan(const float *A, float *B, int numElements)
 {
+	int i = blockDim.x * blockIdx.x + threadIdx.x;
+	B[i] = i+1;
+}
 
+__global__ void
+blelloch_nsm_bscan(const float *A, float *B, int numElements)
+{
+	int sum = 0;
+	int i;
+	for ( i = 0; i < numElements ; i ++){
+		sum += A[i];
+		B[i] = sum;
+	}
+}
+
+__global__ void
+hsh_bscan(const float *A, float *B, int numElements)
+{
+	int sum = 0;
+	int i;
+	for ( i = 0; i < numElements ; i ++){
+		sum += A[i];
+		B[i] = sum;
+	}
+}
+
+__global__ void
+blelloch_bscan(const float *A, float *B, int numElements)
+{
+	int sum = 0;
+	int i;
+	for ( i = 0; i < numElements ; i ++){
+		sum += A[i];
+		B[i] = sum;
+	}
+}
+
+__global__ void
+blelloch_dblock_bscan(const float *A, float *B, int numElements)
+{
+	int sum = 0;
+	int i;
+	for ( i = 0; i < numElements ; i ++){
+		sum += A[i];
+		B[i] = sum;
+	}
 }
 
 
@@ -99,7 +144,6 @@ main(void)
     // Print the vector length to be used, and compute its size
     int numElements = 1000000;
     size_t size = numElements * sizeof(float);
-    printf("[Scan of %d elements]\n", numElements);
 
     // ******************************* HOST *******************************
 
@@ -127,7 +171,7 @@ main(void)
     host_bscan(h_A, h_SCAN, numElements);
     sdkStopTimer (& timer );
     h_msecs = sdkGetTimerValue (& timer );
-    printf("Executed vector add of %d elements on the Host in = %.5fmSecs\n", numElements, h_msecs);
+    printf("host_bscan: %.5fms\n", numElements, h_msecs);
 
 
     // ******************************* GPU SINGLE *******************************
@@ -139,7 +183,6 @@ main(void)
     CUDA_ERROR(cudaMalloc((void **)&d_Scan, size), "Failed to allocate device output vector");
 
     // Copy the host input vector A in host memory to the device input vector in device memory
-    printf("Copy input data from the host memory to the CUDA device\n");
     CUDA_ERROR(cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice), "Failed to copy vector A from host to device");
 
     // Test
@@ -154,17 +197,12 @@ main(void)
     CUDA_ERROR(cudaGetLastError(), "Failed to launch vectorAdd kernel");
     CUDA_ERROR(cudaEventElapsedTime(&d_msecs1, start, stop), "Failed to get elapsed time");
 
-    printf("Executed scan on the Device in a SINGLE THREAD in = %.5fmSecs\n", numElements, d_msecs1);
-
     // Copy the device result vector in device memory to the host result vector
     // in host memory.
-    printf("Copy output data from the CUDA device to the host memory\n");
-    err = cudaMemcpy(h_C, d_Scan, size, cudaMemcpyDeviceToHost);
-    CUDA_ERROR(err, "Failed to copy vector d_Scan from device to host");
-
-    // Verify that the result vector is correct
+    CUDA_ERROR(cudaMemcpy(h_C, d_Scan, size, cudaMemcpyDeviceToHost), "Failed to copy vector d_Scan from device to host");
     compare_results(h_SCAN, h_C, numElements);
-    printf("Test PASSED\n");
+
+    printf("single_thread_bscan: %.5fms, speedup: %.5f\n", numElements, d_msecs1, h_msecs/d_msecs1);
 
 
     // ******************************* HSH-NSM-BSCAN *******************************
@@ -172,8 +210,6 @@ main(void)
     int threadsPerBlock = 1024;
     // Note this pattern, based on integer division, for rounding up
     int blocksPerGrid = 1 + ((numElements - 1) / threadsPerBlock);
-
-    printf("Launching the CUDA kernel with %d blocks of %d threads\n", blocksPerGrid, threadsPerBlock);
 
     // Test
     cudaEventRecord( start, 0 );
@@ -184,14 +220,10 @@ main(void)
 
     CUDA_ERROR(cudaGetLastError(), "Failed to launch vectorAdd kernel");
     CUDA_ERROR(cudaEventElapsedTime( &d_msecs2, start, stop ), "Failed to get elapsed time");
-
-    printf("Executed vector add of %d elements on the Device in %d blocks of %d threads in = %.5fmSecs\nSpeedup: %.5fms",
-    		numElements, blocksPerGrid, threadsPerBlock, d_msecs2, h_msecs/d_msecs2);
-
     CUDA_ERROR(cudaMemcpy(h_C, d_Scan, size, cudaMemcpyDeviceToHost), "Failed to copy vector C from device to host");
-
     compare_results(h_SCAN, h_C, numElements);
-    printf("Test PASSED\n");
+
+    printf("hsh_nsm_bscan: %.5fms, speedup: %.5f\n", numElements, d_msecs2, h_msecs/d_msecs2);
 
 
 
