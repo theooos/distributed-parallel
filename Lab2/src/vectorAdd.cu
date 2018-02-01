@@ -35,6 +35,12 @@ if (err != cudaSuccess) {\
 }\
 }
 
+int const numElements = 1000000;
+int const block_size = 1024;
+// Note this pattern, based on integer division, for rounding up
+int grid_size = 1 + ((numElements - 1) / block_size);
+
+
 __host__ void
 host_bscan(const float *A, float *B, int numElements)
 {
@@ -74,8 +80,24 @@ blelloch_nsm_bscan(const float *A, float *B, int numElements)
 __global__ void
 hsh_bscan(const float *A, float *B, int numElements)
 {
-	int i = blockDim.x * blockIdx.x + threadIdx.x;
-	B[i] = i+1;
+	__shared__ float XY[block_size*2];
+	int r_buf = 0; int w_buf = block_size;
+	int i = blockIdx.x * blockDim.x + threadIdx.x;
+	if(i < numElements){
+		XY[w_buf + threadIdx.x] = A[i];
+	}
+
+	for(uint s=1; s < block_size; s*= 2){
+		__syncthreads();
+        w_buf = block_size - w_buf; r_buf = block_size - r_buf;
+		if(threadIdx.x >= s)
+			XY[w_buf + threadIdx.x] = XY[r_buf + threadIdx.x - s] + XY[r_buf + threadIdx.x];
+		else
+			XY[w_buf + threadIdx.x] = XY[r_buf + threadIdx.x];
+    }
+
+	if(i < numElements)
+		B[i] = 3.0;
 }
 
 __global__ void
@@ -99,7 +121,7 @@ static void compare_results(const float *vector1, const float *vector2, int numE
 	{
 		if (vector1[i] != vector2[i])
 		{
-			fprintf(stderr, "Result verification failed at element %d!\n", i);
+			fprintf(stderr, "Result verification failed at element %d!  %0.5f : %0.5f\n", i, vector1[i], vector2[i]);
 			exit (EXIT_FAILURE);
 		}
 	}
@@ -126,7 +148,6 @@ main(void)
 
 
     // Print the vector length to be used, and compute its size
-    int numElements = 1000000;
     size_t size = numElements * sizeof(float);
 
     // ******************************* HOST *******************************
@@ -189,14 +210,9 @@ main(void)
     printf("single_thread_bscan: %.5fms, speedup: %.5f\n", numElements, d_msecs1, h_msecs/d_msecs1);
 
 
-    // ******************************* HSH-NSM-BSCAN *******************************
-    int threadsPerBlock = 1024;
-    // Note this pattern, based on integer division, for rounding up
-    int blocksPerGrid = 1 + ((numElements - 1) / threadsPerBlock);
-
-    // Test
+    // ******************************* HSH-NSM-BSCAN ******************************* TODO Work
     cudaEventRecord( start, 0 );
-    hsh_nsm_bscan<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_Scan, numElements);
+    hsh_nsm_bscan<<<grid_size, block_size>>>(d_A, d_Scan, numElements);
     cudaEventRecord( stop, 0 );
     cudaEventSynchronize( stop );
     cudaDeviceSynchronize();
@@ -209,9 +225,9 @@ main(void)
     printf("hsh_nsm_bscan: %.5fms, speedup: %.5f\n", numElements, d_msecs2, h_msecs/d_msecs2);
 
 
-    // ******************************* BLELLOCH-NSM-BSCAN *******************************
+    // ******************************* BLELLOCH-NSM-BSCAN ******************************* TODO Remove copy to/from host and where says XY just use x (leave out if struggling)
 	cudaEventRecord( start, 0 );
-	blelloch_nsm_bscan<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_Scan, numElements);
+	blelloch_nsm_bscan<<<grid_size, block_size>>>(d_A, d_Scan, numElements);
 	cudaEventRecord( stop, 0 );
 	cudaEventSynchronize( stop );
 	cudaDeviceSynchronize();
@@ -224,9 +240,9 @@ main(void)
 	printf("blelloch_nsm_bscan: %.5fms, speedup: %.5f\n", numElements, d_msecs3, h_msecs/d_msecs3);
 
 
-	// ******************************* HSH-BSCAN *******************************
+	// ******************************* HSH-BSCAN ******************************* TODO Copy
 	cudaEventRecord( start, 0 );
-	hsh_bscan<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_Scan, numElements);
+	hsh_bscan<<<grid_size, block_size>>>(d_A, d_Scan, numElements);
 	cudaEventRecord( stop, 0 );
 	cudaEventSynchronize( stop );
 	cudaDeviceSynchronize();
@@ -239,9 +255,9 @@ main(void)
 	printf("hsh_bscan: %.5fms, speedup: %.5f\n", numElements, d_msecs4, h_msecs/d_msecs4);
 
 
-	// ******************************* BLELLOCH-BSCAN *******************************
+	// ******************************* BLELLOCH-BSCAN ******************************* TODO Copy
 	cudaEventRecord( start, 0 );
-	blelloch_bscan<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_Scan, numElements);
+	blelloch_bscan<<<grid_size, block_size>>>(d_A, d_Scan, numElements);
 	cudaEventRecord( stop, 0 );
 	cudaEventSynchronize( stop );
 	cudaDeviceSynchronize();
@@ -254,9 +270,9 @@ main(void)
 	printf("blelloch_bscan: %.5fms, speedup: %.5f\n", numElements, d_msecs5, h_msecs/d_msecs5);
 
 
-	// ******************************* BLELLOCH-DBLOCK-BSCAN *******************************
+	// ******************************* BLELLOCH-DBLOCK-BSCAN ******************************* TODO Work
 	cudaEventRecord( start, 0 );
-	blelloch_dblock_bscan<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_Scan, numElements);
+	blelloch_dblock_bscan<<<grid_size, block_size>>>(d_A, d_Scan, numElements);
 	cudaEventRecord( stop, 0 );
 	cudaEventSynchronize( stop );
 	cudaDeviceSynchronize();
