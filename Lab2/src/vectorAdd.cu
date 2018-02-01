@@ -67,45 +67,29 @@ hsh_nsm_bscan(const float *A, float *B, int numElements)
 __global__ void
 blelloch_nsm_bscan(const float *A, float *B, int numElements)
 {
-	int sum = 0;
-	int i;
-	for ( i = 0; i < numElements ; i ++){
-		sum += A[i];
-		B[i] = sum;
-	}
+	int i = blockDim.x * blockIdx.x + threadIdx.x;
+	B[i] = i+1;
 }
 
 __global__ void
 hsh_bscan(const float *A, float *B, int numElements)
 {
-	int sum = 0;
-	int i;
-	for ( i = 0; i < numElements ; i ++){
-		sum += A[i];
-		B[i] = sum;
-	}
+	int i = blockDim.x * blockIdx.x + threadIdx.x;
+	B[i] = i+1;
 }
 
 __global__ void
 blelloch_bscan(const float *A, float *B, int numElements)
 {
-	int sum = 0;
-	int i;
-	for ( i = 0; i < numElements ; i ++){
-		sum += A[i];
-		B[i] = sum;
-	}
+	int i = blockDim.x * blockIdx.x + threadIdx.x;
+	B[i] = i+1;
 }
 
 __global__ void
 blelloch_dblock_bscan(const float *A, float *B, int numElements)
 {
-	int sum = 0;
-	int i;
-	for ( i = 0; i < numElements ; i ++){
-		sum += A[i];
-		B[i] = sum;
-	}
+	int i = blockDim.x * blockIdx.x + threadIdx.x;
+	B[i] = i+1;
 }
 
 
@@ -206,7 +190,6 @@ main(void)
 
 
     // ******************************* HSH-NSM-BSCAN *******************************
-
     int threadsPerBlock = 1024;
     // Note this pattern, based on integer division, for rounding up
     int blocksPerGrid = 1 + ((numElements - 1) / threadsPerBlock);
@@ -224,6 +207,66 @@ main(void)
     compare_results(h_SCAN, h_C, numElements);
 
     printf("hsh_nsm_bscan: %.5fms, speedup: %.5f\n", numElements, d_msecs2, h_msecs/d_msecs2);
+
+
+    // ******************************* BLELLOCH-NSM-BSCAN *******************************
+	cudaEventRecord( start, 0 );
+	blelloch_nsm_bscan<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_Scan, numElements);
+	cudaEventRecord( stop, 0 );
+	cudaEventSynchronize( stop );
+	cudaDeviceSynchronize();
+
+	CUDA_ERROR(cudaGetLastError(), "Failed to launch vectorAdd kernel");
+	CUDA_ERROR(cudaEventElapsedTime( &d_msecs3, start, stop ), "Failed to get elapsed time");
+	CUDA_ERROR(cudaMemcpy(h_C, d_Scan, size, cudaMemcpyDeviceToHost), "Failed to copy vector C from device to host");
+	compare_results(h_SCAN, h_C, numElements);
+
+	printf("blelloch_nsm_bscan: %.5fms, speedup: %.5f\n", numElements, d_msecs3, h_msecs/d_msecs3);
+
+
+	// ******************************* HSH-BSCAN *******************************
+	cudaEventRecord( start, 0 );
+	hsh_bscan<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_Scan, numElements);
+	cudaEventRecord( stop, 0 );
+	cudaEventSynchronize( stop );
+	cudaDeviceSynchronize();
+
+	CUDA_ERROR(cudaGetLastError(), "Failed to launch vectorAdd kernel");
+	CUDA_ERROR(cudaEventElapsedTime( &d_msecs4, start, stop ), "Failed to get elapsed time");
+	CUDA_ERROR(cudaMemcpy(h_C, d_Scan, size, cudaMemcpyDeviceToHost), "Failed to copy vector C from device to host");
+	compare_results(h_SCAN, h_C, numElements);
+
+	printf("hsh_bscan: %.5fms, speedup: %.5f\n", numElements, d_msecs4, h_msecs/d_msecs4);
+
+
+	// ******************************* BLELLOCH-BSCAN *******************************
+	cudaEventRecord( start, 0 );
+	blelloch_bscan<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_Scan, numElements);
+	cudaEventRecord( stop, 0 );
+	cudaEventSynchronize( stop );
+	cudaDeviceSynchronize();
+
+	CUDA_ERROR(cudaGetLastError(), "Failed to launch vectorAdd kernel");
+	CUDA_ERROR(cudaEventElapsedTime( &d_msecs5, start, stop ), "Failed to get elapsed time");
+	CUDA_ERROR(cudaMemcpy(h_C, d_Scan, size, cudaMemcpyDeviceToHost), "Failed to copy vector C from device to host");
+	compare_results(h_SCAN, h_C, numElements);
+
+	printf("blelloch_bscan: %.5fms, speedup: %.5f\n", numElements, d_msecs5, h_msecs/d_msecs5);
+
+
+	// ******************************* BLELLOCH-DBLOCK-BSCAN *******************************
+	cudaEventRecord( start, 0 );
+	blelloch_dblock_bscan<<<blocksPerGrid, threadsPerBlock>>>(d_A, d_Scan, numElements);
+	cudaEventRecord( stop, 0 );
+	cudaEventSynchronize( stop );
+	cudaDeviceSynchronize();
+
+	CUDA_ERROR(cudaGetLastError(), "Failed to launch vectorAdd kernel");
+	CUDA_ERROR(cudaEventElapsedTime( &d_msecs6, start, stop ), "Failed to get elapsed time");
+	CUDA_ERROR(cudaMemcpy(h_C, d_Scan, size, cudaMemcpyDeviceToHost), "Failed to copy vector C from device to host");
+	compare_results(h_SCAN, h_C, numElements);
+
+	printf("blelloch_dblock_bscan: %.5fms, speedup: %.5f\n", numElements, d_msecs6, h_msecs/d_msecs6);
 
 
 
@@ -249,8 +292,6 @@ main(void)
     // Reset the device and exit
     err = cudaDeviceReset();
     CUDA_ERROR(err, "Failed to reset the device");
-
-    printf("Done\n");
     return 0;
 }
 
