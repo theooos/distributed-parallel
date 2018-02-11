@@ -87,15 +87,34 @@ hsh(const float *A, float *B, int num_elements)
 		else
 			XY[w_buf + threadIdx.x] = XY[r_buf + threadIdx.x];
 	}
+
+	// Copy to global memory
 	if (i < num_elements) B[i] = XY[w_buf + threadIdx.x];
 
 }
 
-__global__ void
-blelloch(const float *A, float *B, int num_elements)
-{
-	int i = blockDim.x * blockIdx.x + threadIdx.x;
-	B[i] = i+1;
+__global__ void blelloch(float *A, float *y, int len) {
+    __shared__ float XY[BLOCK_SIZE];
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if(i < len) XY[threadIdx.x] = A[i];
+
+    // Reduction
+    for(unsigned int stride = 1; stride < blockDim.x; stride *= 2) {
+        __syncthreads();
+        unsigned int index = (threadIdx.x + 1) * stride * 2 - 1;
+        if(index < blockDim.x) XY[index] += XY[index - stride];
+    }
+
+    // Distribution
+    for(unsigned int stride = BLOCK_SIZE/4; stride > 0; stride /= 2) {
+        __syncthreads();
+        unsigned int index = (threadIdx.x + 1) * stride * 2 - 1;
+        if(index + stride < BLOCK_SIZE) XY[index + stride] += XY[index];
+    }
+    __syncthreads();
+
+    // Copy to global memory
+    if(i < len) y[i] = XY[threadIdx.x];
 }
 
 __global__ void
@@ -148,18 +167,15 @@ main(void)
     float *h_host_results = (float *)malloc(size);
 
     // Verify that allocations succeeded
-    if (h_input_array == NULL || h_host_results == NULL)
-    {
+    if (h_input_array == NULL || h_host_results == NULL){
         fprintf(stderr, "Failed to allocate host vectors!\n");
         exit(EXIT_FAILURE);
     }
 
     // Initialise the host input vectors
-    for (int i = 0; i < num_elements; ++i)
-    {
+    for (int i = 0; i < num_elements; ++i){
         h_input_array[i] = 1.0f;
     }
-
 
     // ** Execute the vector addition on the Host and time it: **
     sdkStartTimer (& timer );
@@ -259,21 +275,24 @@ main(void)
 	printf("hsh: %.5fms, speedup: %.5f\n", num_elements, time_hsh, time_host/time_hsh);
 
 
-//	// ******************************* BLELLOCH-BSCAN ******************************* TODO Copy
-//	cudaEventRecord( start, 0 );
-//	blelloch<<<grid_size, BLOCK_SIZE>>>(d_input_array, d_gpu_results, num_elements);
-//	cudaEventRecord( stop, 0 );
-//	cudaEventSynchronize( stop );
-//	cudaDeviceSynchronize();
-//
-//	CUDA_ERROR(cudaGetLastError(), "Failed to launch vectorAdd kernel");
-//	CUDA_ERROR(cudaEventElapsedTime( &time_blel, start, stop ), "Failed to get elapsed time");
-//	CUDA_ERROR(cudaMemcpy(h_gpu_results, d_gpu_results, size, cudaMemcpyDeviceToHost), "Failed to copy vector C from device to host");
-//	compare_results(h_host_results, h_gpu_results, num_elements);
-//
-//	printf("blelloch: %.5fms, speedup: %.5f\n", num_elements, time_blel, time_host/time_blel);
-//
-//
+	// ******************************* BLELLOCH-BSCAN *******************************
+	cudaEventRecord( start, 0 );
+	blelloch<<<grid_size, BLOCK_SIZE>>>(d_input_array, d_gpu_results, num_elements);
+	extract_final_sums<<<extract_grid_size, BLOCK_SIZE>>>(d_gpu_results, d_last_elems, num_elements, BLOCK_SIZE);
+	blelloch<<<grid_size, BLOCK_SIZE>>>(d_last_elems, d_last_elems_scanned, extract_length);
+	add_extracts<<<grid_size, BLOCK_SIZE>>>(d_last_elems_scanned, d_gpu_results, num_elements);
+	cudaEventRecord( stop, 0 );
+	cudaEventSynchronize( stop );
+	cudaDeviceSynchronize();
+
+	CUDA_ERROR(cudaGetLastError(), "Failed to launch vectorAdd kernel");
+	CUDA_ERROR(cudaEventElapsedTime( &time_blel, start, stop ), "Failed to get elapsed time");
+	CUDA_ERROR(cudaMemcpy(h_gpu_results, d_gpu_results, size, cudaMemcpyDeviceToHost), "Failed to copy vector C from device to host");
+	compare_results(h_host_results, h_gpu_results, num_elements);
+
+	printf("blelloch: %.5fms, speedup: %.5f\n", num_elements, time_blel, time_host/time_blel);
+
+
 //	// ******************************* BLELLOCH-DBLOCK-BSCAN ******************************* TODO Work
 //	cudaEventRecord( start, 0 );
 //	blelloch_dblock<<<grid_size, BLOCK_SIZE>>>(d_input_array, d_gpu_results, num_elements);
