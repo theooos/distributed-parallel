@@ -27,8 +27,9 @@
 								<option id="nvcc.compiler.option.level.855770653" name="Generate host debug information (-g)" superClass="nvcc.compiler.option.level" value="true" valueType="boolean"/>
 								<option defaultValue="nvcc.compiler.optimization.level.none" id="nvcc.compiler.optimization.level.1970098829" name="Optimization Level" superClass="nvcc.compiler.optimization.level" valueType="enumerated"/>
 								<option id="nvcc.compiler.pic.1128210390" name="Position Independent Code (-fPIC)" superClass="nvcc.compiler.pic"/>
-								<option id="nvcc.compiler.include.paths.685728003" superClass="nvcc.compiler.include.paths" valueType="includePath">
+								<option id="nvcc.compiler.include.paths.685728003" name="Include paths (-I)" superClass="nvcc.compiler.include.paths" valueType="includePath">
 									<listOptionValue builtIn="false" value="/bham/pd/packages/cuda/8.0/samples/common/inc"/>
+									<listOptionValue builtIn="false" value="/home/theo/NVIDIA_CUDA-8.0_Samples/common/inc"/>
 								</option>
 								<inputType id="nvcc.compiler.input.cu.1022047647" superClass="nvcc.compiler.input.cu"/>
 								<inputType id="nvcc.compiler.input.cpp.119116271" superClass="nvcc.compiler.input.cpp"/>
@@ -82,8 +83,9 @@
 								<option id="nvcc.compiler.option.level.388200729" name="Generate host debug information (-g)" superClass="nvcc.compiler.option.level"/>
 								<option defaultValue="nvcc.compiler.optimization.level.most" id="nvcc.compiler.optimization.level.1844426841" name="Optimization Level" superClass="nvcc.compiler.optimization.level" valueType="enumerated"/>
 								<option id="nvcc.compiler.pic.488096480" name="Position Independent Code (-fPIC)" superClass="nvcc.compiler.pic"/>
-								<option id="nvcc.compiler.include.paths.1083815440" superClass="nvcc.compiler.include.paths" valueType="includePath">
+								<option id="nvcc.compiler.include.paths.1083815440" name="Include paths (-I)" superClass="nvcc.compiler.include.paths" valueType="includePath">
 									<listOptionValue builtIn="false" value="/bham/pd/packages/cuda/8.0/samples/common/inc"/>
+									<listOptionValue builtIn="false" value="/home/theo/NVIDIA_CUDA-8.0_Samples/common/inc"/>
 								</option>
 								<inputType id="nvcc.compiler.input.cu.1978306272" superClass="nvcc.compiler.input.cu"/>
 								<inputType id="nvcc.compiler.input.cpp.1640147763" superClass="nvcc.compiler.input.cpp"/>
