@@ -1,27 +1,6 @@
-/**
- * Copyright 1993-2013 NVIDIA Corporation.  All rights reserved.
- *
- * Please refer to the NVIDIA end user license agreement (EULA) associated
- * with this source code for terms and conditions that govern your use of
- * this software. Any use, reproduction, disclosure, or distribution of
- * this software and related documentation outside the terms of the EULA
- * is strictly prohibited.
- *
- */
-
-/**
- * Vector addition: C = A + B.
- *
- * This sample is a very basic sample that implements element by element
- * vector addition. It is the same as the sample illustrating Chapter 2
- * of the programming guide with some additions like error checking.
- *
- * Slightly modified to provide timing support
- */
 
 #include <stdio.h>
 
-// For the CUDA runtime routines (prefixed with "cuda_")
 #include <cuda_runtime.h>
 
 #include <helper_cuda.h>
@@ -42,7 +21,15 @@ __global__ void
 extract_final_sums(const float *A, float *B, int num_elements, int stride){
 	int i = blockDim.x * blockIdx.x + threadIdx.x;
 	if(i < num_elements/stride){
-		B[i] = A[i*stride];
+		B[i] = A[(i+1)*stride-1];
+	}
+}
+
+__global__ void
+add_extracts(const float *extracts_array, float *pre_sum_array, int num_elements){
+	int i = blockDim.x * blockIdx.x + threadIdx.x;
+	if (1023 < i < num_elements){
+		pre_sum_array[i] = pre_sum_array[i] + extracts_array[i/BLOCK_SIZE-1];
 	}
 }
 
@@ -184,9 +171,9 @@ main(void)
 
     // ******************************* GPU SINGLE *******************************
     float *d_input_array = NULL;
-    CUDA_ERROR(cudaMalloc((void **)&d_input_array, size), "Failed to allocate device vector A");
+    CUDA_ERROR(cudaMalloc((void **)&d_input_array, size), "Failed to allocate d_input_array");
     float *d_gpu_results = NULL;
-    CUDA_ERROR(cudaMalloc((void **)&d_gpu_results, size), "Failed to allocate device output vector");
+    CUDA_ERROR(cudaMalloc((void **)&d_gpu_results, size), "Failed to allocate d_gpu_results");
 
     // Copy the host input vector A in host memory to the device input vector in device memory
     CUDA_ERROR(cudaMemcpy(d_input_array, h_input_array, size, cudaMemcpyHostToDevice), "Failed to copy vector A from host to device");
@@ -200,7 +187,7 @@ main(void)
     // wait for device to finish
     cudaDeviceSynchronize();
 
-    CUDA_ERROR(cudaGetLastError(), "Failed to launch vectorAdd kernel");
+    CUDA_ERROR(cudaGetLastError(), "Failed to launch gpu single kernel");
     CUDA_ERROR(cudaEventElapsedTime(&time_single_gpu, start, stop), "Failed to get elapsed time");
 
     // Copy the device result vector in device memory to the host result vector
@@ -209,6 +196,18 @@ main(void)
     compare_results(h_host_results, h_gpu_results, num_elements);
 
     printf("single_thread: %.5fms, speedup: %.5f\n", num_elements, time_single_gpu, time_host/time_single_gpu);
+
+
+    // ******************************* LARGE VECTOR LAYER VARIABLE SETUP **********************
+
+    int extract_length = num_elements/BLOCK_SIZE;
+	size_t extract_size = extract_length * sizeof(float);
+	int extract_grid_size = 1 + (extract_length - 1) / BLOCK_SIZE;
+
+	float *d_last_elems = NULL;
+	CUDA_ERROR(cudaMalloc((void **) &d_last_elems, extract_size), "Failed to create array for last elements of each block");
+	float *d_last_elems_scanned = NULL;
+	CUDA_ERROR(cudaMalloc((void **) &d_last_elems_scanned, extract_size), "Failed to create array for last summed elements");
 
 
 //    // ******************************* HSH-NSM-BSCAN ******************************* TODO Work
@@ -223,7 +222,7 @@ main(void)
 //    CUDA_ERROR(cudaMemcpy(h_gpu_results, d_gpu_results, size, cudaMemcpyDeviceToHost), "Failed to copy vector C from device to host");
 //    compare_results(h_host_results, h_gpu_results, num_elements);
 //
-//    printf("hsh_nsm: %.5fms, speedup: %.5f\n", num_elements, time_hsh_nsm, h_msecs/time_hsh_nsm);
+//    printf("hsh_nsm: %.5fms, speedup: %.5f\n", num_elements, time_hsh_nsm, time_host/time_hsh_nsm);
 //
 //
 //    // ******************************* BLELLOCH-NSM-BSCAN ******************************* TODO Remove copy to/from host and where says XY just use x (leave out if struggling)
@@ -238,62 +237,26 @@ main(void)
 //	CUDA_ERROR(cudaMemcpy(h_gpu_results, d_gpu_results, size, cudaMemcpyDeviceToHost), "Failed to copy vector C from device to host");
 //	compare_results(h_host_results, h_gpu_results, num_elements);
 //
-//	printf("blelloch_nsm: %.5fms, speedup: %.5f\n", num_elements, time_blel_nsm, h_msecs/time_blel_nsm);
+//	printf("blelloch_nsm: %.5fms, speedup: %.5f\n", num_elements, time_blel_nsm, time_host/time_blel_nsm);
 
 
-	// ******************************* HSH-BSCAN ******************************* TODO Copy
-//    cudaEventRecord( start, 0 );
-//	hsh<<<grid_size, BLOCK_SIZE>>>(d_input_array, d_gpu_results, num_elements);
-//	cudaEventRecord( stop, 0 );
-//	cudaEventSynchronize( stop );
-//	cudaDeviceSynchronize();
-//
-//	CUDA_ERROR(cudaGetLastError(), "Failed to launch vectorAdd kernel");
-//	CUDA_ERROR(cudaEventElapsedTime( &time_hsh, start, stop ), "Failed to get elapsed time");
-//	CUDA_ERROR(cudaMemcpy(h_gpu_results, d_gpu_results, size, cudaMemcpyDeviceToHost), "Failed to copy vector C from device to host");
-//	compare_results(h_host_results, h_gpu_results, num_elements);
-//
-//	printf("hsh: %.5fms, speedup: %.5f\n", num_elements, time_hsh, h_msecs/time_hsh);
-
-	int extract_length = num_elements/BLOCK_SIZE;
-	size_t extract_size = extract_length * sizeof(float);
-	int extract_grid_size = 1 + (extract_length - 1) / BLOCK_SIZE;
-
-	float *d_last_elems = NULL;
-	CUDA_ERROR(cudaMalloc((void **) &d_last_elems, extract_size), "Failed to create array for last elements of each block");
-	float *d_last_elems_scanned = NULL;
-	CUDA_ERROR(cudaMalloc((void **) &d_last_elems_scanned, extract_size), "Failed to create array for last elements of each block");
+	// ******************************* HSH-BSCAN *******************************
 
 	cudaEventRecord( start, 0 );
 	hsh<<<grid_size, BLOCK_SIZE>>>(d_input_array, d_gpu_results, num_elements);
 	extract_final_sums<<<extract_grid_size, BLOCK_SIZE>>>(d_gpu_results, d_last_elems, num_elements, BLOCK_SIZE);
 	hsh<<<grid_size, BLOCK_SIZE>>>(d_last_elems, d_last_elems_scanned, extract_length);
+	add_extracts<<<grid_size, BLOCK_SIZE>>>(d_last_elems_scanned, d_gpu_results, num_elements);
 	cudaEventRecord( stop, 0 );
 	cudaEventSynchronize( stop );
 	cudaDeviceSynchronize();
 
-	float *h_last_elems = (float *) malloc(extract_size);
-	float *h_last_elems_scanned = (float *) malloc(extract_size);
-
-	CUDA_ERROR(cudaMemcpy(h_last_elems, d_last_elems, extract_size, cudaMemcpyDeviceToHost), "LastElems copy failed.");
-	CUDA_ERROR(cudaMemcpy(h_last_elems_scanned, d_last_elems_scanned, extract_size, cudaMemcpyDeviceToHost), "LastElemsScanned copy failed.");
-
-	printf("%d\n", sizeof(h_last_elems));
-	printf("%d\n", sizeof(*h_last_elems_scanned));
-	printf("%d\n", extract_size);
-	printf("%d\n", extract_length);
-
-	for (int i=0;i < extract_length; i++) {
-	    printf("%f,",h_last_elems_scanned[i]);
-	}
-	printf("\n");
-
-	CUDA_ERROR(cudaGetLastError(), "Failed to launch vectorAdd kernel");
-	CUDA_ERROR(cudaEventElapsedTime( &time_hsh, start, stop ), "Failed to get elapsed time");
-	CUDA_ERROR(cudaMemcpy(h_gpu_results, d_gpu_results, size, cudaMemcpyDeviceToHost), "Failed to copy vector C from device to host");
+	CUDA_ERROR(cudaGetLastError(), "Failed to launch hsh kernel");
+	CUDA_ERROR(cudaEventElapsedTime(&time_hsh, start, stop), "Failed to get elapsed time");
+	CUDA_ERROR(cudaMemcpy(h_gpu_results, d_gpu_results, size, cudaMemcpyDeviceToHost), "Failed to copy results from device to host");
 	compare_results(h_host_results, h_gpu_results, num_elements);
 
-//	printf("hsh: %.5fms, speedup: %.5f\n", num_elements, time_hsh, h_msecs/time_hsh);
+	printf("hsh: %.5fms, speedup: %.5f\n", num_elements, time_hsh, time_host/time_hsh);
 
 
 //	// ******************************* BLELLOCH-BSCAN ******************************* TODO Copy
@@ -308,7 +271,7 @@ main(void)
 //	CUDA_ERROR(cudaMemcpy(h_gpu_results, d_gpu_results, size, cudaMemcpyDeviceToHost), "Failed to copy vector C from device to host");
 //	compare_results(h_host_results, h_gpu_results, num_elements);
 //
-//	printf("blelloch: %.5fms, speedup: %.5f\n", num_elements, time_blel, h_msecs/time_blel);
+//	printf("blelloch: %.5fms, speedup: %.5f\n", num_elements, time_blel, time_host/time_blel);
 //
 //
 //	// ******************************* BLELLOCH-DBLOCK-BSCAN ******************************* TODO Work
@@ -323,21 +286,22 @@ main(void)
 //	CUDA_ERROR(cudaMemcpy(h_gpu_results, d_gpu_results, size, cudaMemcpyDeviceToHost), "Failed to copy vector C from device to host");
 //	compare_results(h_host_results, h_gpu_results, num_elements);
 //
-//	printf("blelloch_dblock: %.5fms, speedup: %.5f\n", num_elements, time_blel_dblock, h_msecs/time_blel_dblock);
+//	printf("blelloch_dblock: %.5fms, speedup: %.5f\n", num_elements, time_blel_dblock, time_host/time_blel_dblock);
 
 
 
     // ******************************* Cleanup *******************************
 
     // Free device global memory
-    err = cudaFree(d_input_array);
-    CUDA_ERROR(err, "Failed to free device vector A");
-    err = cudaFree(d_gpu_results);
-    CUDA_ERROR(err, "Failed to free device vector Scan");
+    CUDA_ERROR(cudaFree(d_input_array), "Failed to free device vector A");
+    CUDA_ERROR(cudaFree(d_gpu_results), "Failed to free device vector Scan");
+    CUDA_ERROR(cudaFree(d_last_elems), "Failed to free device vector Scan");
+    CUDA_ERROR(cudaFree(d_last_elems_scanned), "Failed to free device vector Scan");
 
     // Free host memory
     free(h_input_array);
     free(h_gpu_results);
+    free(h_host_results);
 
     // Clean up the Host timer
     sdkDeleteTimer (& timer );
