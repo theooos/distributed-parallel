@@ -169,7 +169,7 @@ void runWarpExperiment(){
 __global__ void
 grayscale(unsigned char* inputImage, unsigned char* outputImage, unsigned int width, unsigned int height){
 	const unsigned int thread = blockDim.x * blockIdx.x + threadIdx.x;
-	if(thread < width*height*3){
+	if(thread < width*height*3 && thread%3 == 0){
 		float average = (inputImage[thread] + inputImage[thread+1] + inputImage[thread+2])/3;
 
 		outputImage[thread] = average;
