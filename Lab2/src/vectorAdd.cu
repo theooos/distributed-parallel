@@ -18,7 +18,7 @@ if (err != cudaSuccess) {\
 
 
 __global__ void
-extract_final_sums(const float *A, float *B, int num_elements, int stride){
+extractFinalSums(const float *A, float *B, int num_elements, int stride){
 	int i = blockDim.x * blockIdx.x + threadIdx.x;
 	if(i < num_elements/stride){
 		B[i] = A[(i+1)*stride-1];
@@ -26,7 +26,7 @@ extract_final_sums(const float *A, float *B, int num_elements, int stride){
 }
 
 __global__ void
-add_extracts(const float *extracts_array, float *pre_sum_array, int num_elements){
+addExtracts(const float *extracts_array, float *pre_sum_array, int num_elements){
 	int i = blockDim.x * blockIdx.x + threadIdx.x;
 	if (1023 < i < num_elements){
 		pre_sum_array[i] = pre_sum_array[i] + extracts_array[i/BLOCK_SIZE-1];
@@ -260,9 +260,9 @@ main(void)
 
 	cudaEventRecord( start, 0 );
 	hsh<<<grid_size, BLOCK_SIZE>>>(d_input_array, d_gpu_results, num_elements);
-	extract_final_sums<<<extract_grid_size, BLOCK_SIZE>>>(d_gpu_results, d_last_elems, num_elements, BLOCK_SIZE);
+	extractFinalSums<<<extract_grid_size, BLOCK_SIZE>>>(d_gpu_results, d_last_elems, num_elements, BLOCK_SIZE);
 	hsh<<<grid_size, BLOCK_SIZE>>>(d_last_elems, d_last_elems_scanned, extract_length);
-	add_extracts<<<grid_size, BLOCK_SIZE>>>(d_last_elems_scanned, d_gpu_results, num_elements);
+	addExtracts<<<grid_size, BLOCK_SIZE>>>(d_last_elems_scanned, d_gpu_results, num_elements);
 	cudaEventRecord( stop, 0 );
 	cudaEventSynchronize( stop );
 	cudaDeviceSynchronize();
@@ -278,9 +278,9 @@ main(void)
 	// ******************************* BLELLOCH-BSCAN *******************************
 	cudaEventRecord( start, 0 );
 	blelloch<<<grid_size, BLOCK_SIZE>>>(d_input_array, d_gpu_results, num_elements);
-	extract_final_sums<<<extract_grid_size, BLOCK_SIZE>>>(d_gpu_results, d_last_elems, num_elements, BLOCK_SIZE);
+	extractFinalSums<<<extract_grid_size, BLOCK_SIZE>>>(d_gpu_results, d_last_elems, num_elements, BLOCK_SIZE);
 	blelloch<<<grid_size, BLOCK_SIZE>>>(d_last_elems, d_last_elems_scanned, extract_length);
-	add_extracts<<<grid_size, BLOCK_SIZE>>>(d_last_elems_scanned, d_gpu_results, num_elements);
+	addExtracts<<<grid_size, BLOCK_SIZE>>>(d_last_elems_scanned, d_gpu_results, num_elements);
 	cudaEventRecord( stop, 0 );
 	cudaEventSynchronize( stop );
 	cudaDeviceSynchronize();
