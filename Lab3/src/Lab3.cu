@@ -169,7 +169,7 @@ void runWarpExperiment(){
 __global__ void
 grayscale(unsigned char* inputImage, unsigned char* outputImage, unsigned int width, unsigned int height){
 	const unsigned int thread = blockDim.x * blockIdx.x + threadIdx.x;
-	if(thread < width*height){
+	if(thread < width*height*3){
 		float average = (inputImage[thread] + inputImage[thread+1] + inputImage[thread+2])/3;
 
 		outputImage[thread] = average;
@@ -188,9 +188,10 @@ void filter(unsigned char* h_input, unsigned char* h_output, unsigned int width,
 	CUDA_ERROR(cudaMemcpy(d_input, h_input, size, cudaMemcpyHostToDevice), "Failed to copy image to GPU.");
 	CUDA_ERROR(cudaMalloc((void **) &d_output, size), "Failed to allocate result image space.");
 
-	dim3 blockDims(512, 1, 1);
+	dim3 blockDims(1024, 1, 1);
 	dim3 gridDims((unsigned int) ceil((double)(length/blockDims.x)), 1, 1);
 	grayscale<<<gridDims, blockDims>>>(d_input, d_output, width, height);
+	cudaDeviceSynchronize();
 
 	CUDA_ERROR(cudaMemcpy(h_output, d_output, size, cudaMemcpyDeviceToHost), "Failed to copy results from GPU.");
 	CUDA_ERROR(cudaFree(d_input), "Failed to free input memory.");
@@ -210,15 +211,15 @@ int performGrayscale(){
     if(error) std::cout << "decoder error " << error << ": " << lodepng_error_text(error) << std::endl;
 
     // Remove the alpha channels
-//    unsigned char* inputImage = new unsigned char[(in_image.size()*3)/4];
-//    unsigned char* outputImage = new unsigned char[(in_image.size()*3)/4];
-//    int where = 0;
-//    for(int i = 0; i < in_image.size(); ++i) {
-//       if((i+1) % 4 != 0) {
-//           inputImage[where] = in_image.at(i);
-//           outputImage[where] = 255;
-//           where++;
-//       }
+    unsigned char* inputImage = new unsigned char[(in_image.size()*3)/4];
+    unsigned char* outputImage = new unsigned char[(in_image.size()*3)/4];
+    int where = 0;
+    for(int i = 0; i < in_image.size(); i++) {
+       if((i+1) % 4 != 0) {
+           inputImage[where] = in_image.at(i);
+           outputImage[where] = 255;
+           where++;
+       }
     }
 
     // Run the filter on it
