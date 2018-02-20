@@ -1,0 +1,27 @@
+Part 1:
+I extended HSH_BSCAN to be a full scan on 1,000,000 elements.
+
+Part 2:
+The device I am running is a GTX1080 containing 20 SMs each with 128 CUDA cores. My GPU operation simply added the thread number to itself 10,000,000 times. The results in relation to grid and warp size are as follows.
+
+grid	block	time (ms)
+1		1		199.785
+1		128		196.085
+1		256		187.077
+1		512		185.07
+1		1024	272.844
+5		1		177.301
+5		128		174.269
+5		256		184.054
+5		512		189.836
+5		1024	248.012
+20		1		174.306
+20		128		190.38
+20		256		177.133
+20		512		195.697
+20		1024	264.536
+
+I'm confused by these results. I thought that having a block of 20 with 128 would be utilizing the full number of warps, and 20 with 256 would thereby take twice as long, or even 20 with 129. I believe I must have misunderstood something.
+
+Part 3:
+I implemented a grayscale imageop, using the average algorithm.

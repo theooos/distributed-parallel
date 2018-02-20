@@ -160,8 +160,33 @@ void performFullScan(){
 
 // ************************* WARP EXPERIMENT ****************************
 
-void runWarpExperiment(){
+__global__ void
+warpTest(unsigned int *result){
+	const int i = blockDim.x * blockIdx.x + threadIdx.x;
+	result = 0;
+	for(int a = 0; a < 1000000; a++){
+		result += i;
+	}
+}
 
+void runWarpExperiment(){
+	cudaEvent_t start, stop ;
+	float time;
+	cudaEventCreate (&start);
+	cudaEventCreate (&stop);
+
+	unsigned int *d_input;
+	CUDA_ERROR(cudaMalloc((void **) &d_input, sizeof(unsigned int)), "Failed to allocate space for float.");
+
+	cudaEventRecord(start, 0);
+	warpTest<<<20, 1024>>>(d_input);
+	cudaEventRecord(stop, 0);
+	cudaEventSynchronize(stop);
+	cudaDeviceSynchronize();
+	CUDA_ERROR(cudaGetLastError(), "Failed to launch warp experiment");
+	CUDA_ERROR(cudaEventElapsedTime(&time, start, stop), "Failed to get elapsed time");
+
+	std::cout << time << "ms\n";
 }
 
 // ************************* GRAY SCALING ****************************
