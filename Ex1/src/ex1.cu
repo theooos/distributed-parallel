@@ -35,8 +35,13 @@ if (err != cudaSuccess) {\
 
 #define BLOCK_SIZE 1024
 
+#define NUM_BANKS 16
+#define LOG_NUM_BANKS 4
+#define CONFLICT_FREE_OFFSET(n) \
+    ((n) >> NUM_BANKS + (n) >> (2 * LOG_NUM_BANKS))
+
 __global__ void
-prescan(int *g_odata, int *g_idata, int n)
+block(int *g_odata, int *g_idata, int n)
 {
 	__shared__ int temp[BLOCK_SIZE*2];  // allocated on invocation
 	int thid = threadIdx.x;
@@ -95,7 +100,7 @@ int main(void)
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
 
-	uint num_elements = 2049;
+	uint num_elements = 2048;
 	size_t size = num_elements * sizeof(int);
 	int grid_size = 1 + (num_elements - 1) / BLOCK_SIZE;
 
@@ -135,7 +140,7 @@ int main(void)
 
 	// *************************** BSCAN **********************************
 	cudaEventRecord(start, 0);
-	prescan<<<1, BLOCK_SIZE>>>(d_gpu_results, d_input_array, num_elements);
+	block<<<1, BLOCK_SIZE>>>(d_gpu_results, d_input_array, num_elements);
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);
 
