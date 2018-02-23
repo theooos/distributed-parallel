@@ -78,6 +78,52 @@ block(int *g_odata, int *g_idata, int n)
 	g_odata[2*thid+1] = temp[2*thid+1];
 }
 
+__global__ void
+block_bcao(int *g_odata, int *g_idata, int n)
+{
+	__shared__ int temp[BLOCK_SIZE*2];  // allocated on invocation
+	int thid = threadIdx.x;
+	int offset = 1;
+	int ai = thid;
+	int bi = thid + (n/2);
+	int bankOffsetA = CONFLICT_FREE_OFFSET(ai);
+	int bankOffsetB = CONFLICT_FREE_OFFSET(bi);
+	temp[ai + bankOffsetA] = g_idata[ai];
+	temp[bi + bankOffsetB] = g_idata[bi];
+	for (int d = n>>1; d > 0; d >>= 1)  // build sum in place up the tree
+	{
+		__syncthreads();
+		if (thid < d)
+		{
+			int ai = offset*(2*thid+1)-1;
+			int bi = offset*(2*thid+2)-1;
+			ai += CONFLICT_FREE_OFFSET(ai);
+			bi += CONFLICT_FREE_OFFSET(bi);
+			temp[bi] += temp[ai];
+		}
+		offset *= 2;
+	}
+	if (thid==0) { temp[n - 1 + CONFLICT_FREE_OFFSET(n - 1)] = 0;}
+	for (int d = 1; d < n; d *= 2) // traverse down tree & build scan
+	{
+		offset >>= 1;
+		__syncthreads();
+		if (thid < d)
+		{
+			int ai = offset*(2*thid+1)-1;
+			int bi = offset*(2*thid+2)-1;
+			ai += CONFLICT_FREE_OFFSET(ai);
+			bi += CONFLICT_FREE_OFFSET(bi);
+			int t = temp[ai];
+			temp[ai] = temp[bi];
+			temp[bi] += t;
+		}
+	}
+	__syncthreads();
+	g_odata[ai] = temp[ai + bankOffsetA];
+	g_odata[bi] = temp[bi + bankOffsetB];
+}
+
 
 static void compare_results(const int *vector1, const int *vector2, int num_elements)
 {
@@ -152,11 +198,24 @@ int main(void)
 
 	compare_results(h_host_results, h_gpu_results, num_elements);
 
-	printf("block: %.5fms", time_bscan);
+	printf("block: %.5fms\n", time_bscan);
+	cudaDeviceSynchronize();
 
 	// *************************** BSCAN BCAO *****************************
+	cudaEventRecord(start, 0);
+	block_bcao<<<1, BLOCK_SIZE>>>(d_gpu_results, d_input_array, num_elements);
+	cudaEventRecord(stop, 0);
+	cudaEventSynchronize(stop);
 
+	CUDA_ERROR(cudaGetLastError(), "Failed to launch bscan_bcao kernel");
+	CUDA_ERROR(cudaEventElapsedTime(&time_bscan_bcao, start, stop), "Failed to get elapsed time");
+	CUDA_ERROR(cudaMemcpy(h_gpu_results, d_gpu_results, size, cudaMemcpyDeviceToHost), "Failed to copy results from device to host");
 
+	printf("%d %d %d %d\n", h_gpu_results[0], h_gpu_results[1], h_gpu_results[2], h_gpu_results[num_elements-1]);
+
+	compare_results(h_host_results, h_gpu_results, num_elements);
+
+	printf("block_bcao: %.5fms\n", time_bscan_bcao);
 
 	// *************************** FSCAN **********************************
 
