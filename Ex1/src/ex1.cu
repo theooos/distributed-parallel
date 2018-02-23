@@ -38,12 +38,12 @@ if (err != cudaSuccess) {\
 __global__ void
 prescan(int *g_odata, int *g_idata, int n)
 {
-	extern __shared__ int temp[];  // allocated on invocation
+	__shared__ int temp[BLOCK_SIZE*2];  // allocated on invocation
 	int thid = threadIdx.x;
 	int offset = 1;
-	temp[2*thid] = g_idata[2*thid]; // load input into shared memory
+	temp[2*thid] = g_idata[2*thid];     // load input into shared memory
 	temp[2*thid+1] = g_idata[2*thid+1];
-	for (int d = n>>1; d > 0; d >>= 1)                    // build sum in place up the tree
+	for (int d = n>>1; d > 0; d >>= 1)  // build sum in place up the tree
 	{
 		__syncthreads();
 		if (thid < d)
@@ -74,6 +74,17 @@ prescan(int *g_odata, int *g_idata, int n)
 }
 
 
+static void compare_results(const int *vector1, const int *vector2, int num_elements)
+{
+	for (int i = 0; i < num_elements; ++i){
+		if (fabs(vector1[i] - vector2[i]) > 1e-5f){
+			fprintf(stderr, "Result verification failed at element %d!  h%d : d%d\n", i, vector1[i], vector2[i]);
+			exit (EXIT_FAILURE);
+		}
+	}
+}
+
+
 int main(void)
 {
 	cudaError_t err = cudaSuccess;
@@ -84,8 +95,8 @@ int main(void)
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
 
-	uint num_elements = 10000000;
-	size_t size = num_elements * sizeof(float);
+	uint num_elements = 2049;
+	size_t size = num_elements * sizeof(int);
 	int grid_size = 1 + (num_elements - 1) / BLOCK_SIZE;
 
 	// Allocate the input and output vector
@@ -112,9 +123,31 @@ int main(void)
 	printf("%d %d %d %d\n", h_input_array[0], h_input_array[1], h_input_array[2], h_input_array[num_elements-1]);
 	printf("%d %d %d %d\n", h_host_results[0], h_host_results[1], h_host_results[2], h_host_results[num_elements-1]);
 
+	// Initialise GPU arrays
+	int *d_input_array = NULL;
+	CUDA_ERROR(cudaMalloc((void **)&d_input_array, size), "Failed to allocate d_input_array");
+	int *d_gpu_results = NULL;
+	CUDA_ERROR(cudaMalloc((void **)&d_gpu_results, size), "Failed to allocate d_gpu_results");
+
+	// Copy the host input vector to the device memory
+	CUDA_ERROR(cudaMemcpy(d_input_array, h_input_array, size, cudaMemcpyHostToDevice), "Failed to copy input vector from host to device");
+
+
 	// *************************** BSCAN **********************************
+	cudaEventRecord(start, 0);
+	prescan<<<1, BLOCK_SIZE>>>(d_gpu_results, d_input_array, num_elements);
+	cudaEventRecord(stop, 0);
+	cudaEventSynchronize(stop);
 
+	CUDA_ERROR(cudaGetLastError(), "Failed to launch bscan kernel");
+	CUDA_ERROR(cudaEventElapsedTime(&time_bscan, start, stop), "Failed to get elapsed time");
+	CUDA_ERROR(cudaMemcpy(h_gpu_results, d_gpu_results, size, cudaMemcpyDeviceToHost), "Failed to copy results from device to host");
 
+	printf("%d %d %d %d\n", h_gpu_results[0], h_gpu_results[1], h_gpu_results[2], h_gpu_results[num_elements-1]);
+
+	compare_results(h_host_results, h_gpu_results, num_elements);
+
+	printf("block: %.5fms", time_bscan);
 
 	// *************************** BSCAN BCAO *****************************
 
