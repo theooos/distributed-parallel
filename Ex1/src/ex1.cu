@@ -124,6 +124,43 @@ block_bcao(int *g_odata, int *g_idata, int n)
 	g_odata[bi] = temp[bi + bankOffsetB];
 }
 
+__global__ void
+full(int *g_odata, int *g_idata, int n)
+{
+	__shared__ int temp[BLOCK_SIZE*2];  // allocated on invocation
+	int thid = threadIdx.x;
+	int offset = 1;
+	temp[2*thid] = g_idata[2*thid];     // load input into shared memory
+	temp[2*thid+1] = g_idata[2*thid+1];
+	for (int d = n>>1; d > 0; d >>= 1)  // build sum in place up the tree
+	{
+		__syncthreads();
+		if (thid < d)
+		{
+			int ai = offset*(2*thid+1)-1;
+			int bi = offset*(2*thid+2)-1;
+			temp[bi] += temp[ai];
+		}
+		offset *= 2;
+	}
+	if (thid == 0) { temp[n - 1] = 0; } // clear the last element
+	for (int d = 1; d < n; d *= 2) // traverse down tree & build scan
+	{
+		offset >>= 1;
+		__syncthreads();
+		if (thid < d)
+		{
+			int ai = offset*(2*thid+1)-1;
+			int bi = offset*(2*thid+2)-1;
+			int t = temp[ai];
+			temp[ai] = temp[bi];
+			temp[bi] += t;
+		}
+	}
+	__syncthreads();
+	g_odata[2*thid] = temp[2*thid]; // write results to device memory
+	g_odata[2*thid+1] = temp[2*thid+1];
+}
 
 static void compare_results(const int *vector1, const int *vector2, int num_elements)
 {
@@ -148,7 +185,6 @@ int main(void)
 
 	uint num_elements = 2048;
 	size_t size = num_elements * sizeof(int);
-	int grid_size = 1 + (num_elements - 1) / BLOCK_SIZE;
 
 	// Allocate the input and output vector
 	int *h_input_array = (int *)malloc(size);
@@ -216,6 +252,47 @@ int main(void)
 	compare_results(h_host_results, h_gpu_results, num_elements);
 
 	printf("block_bcao: %.5fms\n", time_bscan_bcao);
+
+
+	// *************************** FULL SETUP *****************************
+	printf("\nResetting for 1000000 sized array.\n");
+
+	// Resize arrays.
+	num_elements = 1000000;
+	size = num_elements * sizeof(int);
+	int grid_size = 1 + (num_elements - 1) / BLOCK_SIZE;
+
+	// Reallocate space.
+	h_input_array = (int *)malloc(size);
+	h_gpu_results = (int *)malloc(size);
+	h_host_results = (int *)malloc(size);
+
+	if(h_input_array == NULL || h_host_results == NULL){
+		fprintf(stderr, "Failed to allocate host vectors!\n");
+		exit(EXIT_FAILURE);
+	}
+
+	// Reinitialise arrays.
+	for(int i = 0; i < num_elements; i++){
+		h_input_array[i] = rand()%10;
+	}
+	h_host_results[0] = 0;
+	for(int i = 1; i < num_elements; i++){
+		h_host_results[i] = h_host_results[i-1] + h_input_array[i-1];
+	}
+
+	// Check host vectors are as expected
+	printf("%d %d %d %d\n", h_input_array[0], h_input_array[1], h_input_array[2], h_input_array[num_elements-1]);
+	printf("%d %d %d %d\n", h_host_results[0], h_host_results[1], h_host_results[2], h_host_results[num_elements-1]);
+
+	// Initialise GPU arrays
+	d_input_array = NULL;
+	CUDA_ERROR(cudaMalloc((void **)&d_input_array, size), "Failed to allocate d_input_array");
+	d_gpu_results = NULL;
+	CUDA_ERROR(cudaMalloc((void **)&d_gpu_results, size), "Failed to allocate d_gpu_results");
+
+	// Copy the host input vector to the device memory
+	CUDA_ERROR(cudaMemcpy(d_input_array, h_input_array, size, cudaMemcpyHostToDevice), "Failed to copy input vector from host to device");
 
 	// *************************** FSCAN **********************************
 
