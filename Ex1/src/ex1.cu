@@ -18,6 +18,7 @@
  *
  * Implementation details:
  * TODO Any details or performance strategies I implemented which improve upon a base level of the target goals
+ * I spent 26 total hours on this.
  */
 
 #include <stdio.h>
@@ -194,7 +195,7 @@ fuller(int *g_idata, int *g_odata, int stride, int in_length, int *block_ends)
 			offset *= 2;
 		}
 		if (thid == 0) {
-			block_ends[real_index/2048] = temp[stride - 1];
+			block_ends[real_index/stride] = temp[stride - 1];
 			temp[stride - 1] = 0;
 		}
 		for (int d = 1; d < stride; d *= 2) // traverse down tree & build scan
@@ -369,18 +370,52 @@ int main(void)
 	CUDA_ERROR(cudaMalloc((void **)&d_sum2, sum2_size), "Failed to allocate d_sum2");
 	CUDA_ERROR(cudaMalloc((void **)&d_sum2_scanned, sum2_size), "Failed to allocate d_sum2_scanned");
 
+	// Calculate required grid and block sizes
+	int scan1_grid = 4883;
+	int scan1_block = 1024;
+	int scan2_grid = 3;
+	int scan2_block = 1024;
+	int scan3_grid = 1;
+	int scan3_block = 1;
+
+	int add1_grid = 3;
+	int add1_block = 1024;
+	int add2_grid = 9764;
+	int add2_block = 1024;
+
+	// Debugging vectors
+	int *test_results = (int *) malloc(size);
+	int *test_sum1 = (int *) malloc(sum1_size);
+	int *test_sum1_scanned = (int *) malloc(sum1_size);
+	int *test_sum2 = (int *) malloc(sum2_size);
+	int *test_sum2_scanned = (int *) malloc(sum2_size);
+
+	// ************************* SOME TEST DATA ***************************
+	int seg1 = 0;
+	for (int i = 0; i < 2048; i++) seg1 += h_input_array[i];
+	int seg2 = 0;
+	for (int i = 2048; i < 4096; i++) seg2 += h_input_array[i];
+	int seg3 = 0;
+	for (int i = 4096; i < 6144; i++) seg3 += h_input_array[i];
+
 
 	// *************************** FSCAN **********************************
 	cudaEventRecord(start, 0);
-	fuller<<<4882, 1024>>>(d_input_array, d_gpu_results, stride, total_elements, d_sum1);
+	fuller<<<scan1_grid, scan1_block>>>(d_input_array, d_gpu_results, stride, total_elements, d_sum1);
+	CUDA_ERROR(cudaMemcpy(test_results, d_gpu_results, size, cudaMemcpyDeviceToHost), "1");
+	CUDA_ERROR(cudaMemcpy(test_sum1, d_sum1, sum1_size, cudaMemcpyDeviceToHost), "2");
 	cudaDeviceSynchronize();
-	fuller<<<3, 1024>>>(d_sum1, d_sum1_scanned, stride, sum1_length, d_sum2);
+	fuller<<<scan2_grid, scan2_block>>>(d_sum1, d_sum1_scanned, stride, sum1_length, d_sum2);
+	CUDA_ERROR(cudaMemcpy(test_sum2, d_sum2, sum2_size, cudaMemcpyDeviceToHost), "3");
 	cudaDeviceSynchronize();
-	fuller<<<1, 1>>>(d_sum2, d_sum2_scanned, stride, sum2_length, d_sum1); //redundantly using d_sum1 so no null pointer
+	fuller<<<scan3_grid, scan3_block>>>(d_sum2, d_sum2_scanned, stride, sum2_length, d_sum1); //redundantly using d_sum1 so no null pointer
+	CUDA_ERROR(cudaMemcpy(test_sum2_scanned, d_sum2_scanned, sum2_size, cudaMemcpyDeviceToHost), "4");
 	cudaDeviceSynchronize();
-	apply_block_ends<<<3, 1024>>>(d_sum2_scanned, d_sum1_scanned, sum1_length, stride);
+	apply_block_ends<<<add1_grid, add1_block>>>(d_sum2_scanned, d_sum1_scanned, sum1_length, stride);
+	CUDA_ERROR(cudaMemcpy(test_sum1_scanned, d_sum1_scanned, sum1_size, cudaMemcpyDeviceToHost), "5");
 	cudaDeviceSynchronize();
-	apply_block_ends<<<9764, 1024>>>(d_sum1_scanned, d_gpu_results, total_elements, stride);
+	apply_block_ends<<<add2_grid, add2_block>>>(d_sum1_scanned, d_gpu_results, total_elements, stride);
+	CUDA_ERROR(cudaMemcpy(test_results, d_gpu_results, size, cudaMemcpyDeviceToHost), "6");
 	cudaEventRecord(stop, 0);
 	cudaEventSynchronize(stop);
 	cudaDeviceSynchronize();
