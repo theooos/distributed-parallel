@@ -196,7 +196,7 @@ int full(void){
 	cudaEventCreate(&start);
 	cudaEventCreate(&stop);
 
-	uint total_elements = 8192;
+	uint total_elements = 10000000;
 	size_t size = total_elements * sizeof(int);
 	int stride = 2048;
 	int total_padded = (total_elements % stride == 0) ? total_elements : total_elements + (stride - total_elements % stride);
@@ -240,12 +240,13 @@ int full(void){
 	CUDA_ERROR(cudaMemcpy(d_input_array, h_input_array, size_padded, cudaMemcpyHostToDevice), "Failed to copy input vector from host to device");
 
 
-	// ************* MULTI LEVEL VARIABLES ***********
-	int *d_gpu_sums1 = NULL;
-//	int *d_sum1_scanned = NULL;
-	int sums1_length = total_padded/stride;
-	size_t sums1_size = sums1_length * sizeof(int);
+	// ************* 1. Perform the first scan ***********
+	// Sum1 vars and test vars
 
+	int *d_gpu_sums1 = NULL;
+	int sums1_length = total_padded/stride;
+	int sums1_length_padded = (sums1_length % 2048 == 0) ? sums1_length : sums1_length + (stride - sums1_length % stride);
+	size_t sums1_size = sums1_length_padded * sizeof(int);
 	CUDA_ERROR(cudaMalloc((void **) &d_gpu_sums1, sums1_size), "Failed to allocate d_sum1");
 
 	int scan1_grid = total_padded/stride;
@@ -254,24 +255,32 @@ int full(void){
 	int *h_host_sums1 = (int *) malloc(sums1_size);
 	int count = 0;
 	for(int i = 0; i < total_padded/stride; i++){
-		printf("loop\n");
 		count = 0;
 		for(int j = 0; j < stride; j++){
 			count += h_input_array[i*stride + j];
 		}
 		h_host_sums1[i] = count;
 	}
-
 	int *h_gpu_sums1 = (int *) malloc(sums1_size);
+
 
 	full<<<scan1_grid, scan1_block>>>(d_gpu_results, d_input_array, total_padded, stride, d_gpu_sums1);
 	cudaDeviceSynchronize();
 	gpuErrchk(cudaGetLastError());
 
-
 	CUDA_ERROR(cudaMemcpy(h_gpu_sums1, d_gpu_sums1, sums1_size, cudaMemcpyDeviceToHost), "Failed to copy sum1 results to host.");
-	compare_results(h_host_sums1, h_gpu_sums1, sums1_length);
+	if (compare_results(h_host_sums1, h_gpu_sums1, sums1_length)){
+		printf("first full scan failed");
+	}
 
+
+	// *********** 2. Pad the sums *****************
+
+
+
+
+
+	// *********** CLEANUP ***********************
 	cudaFree(d_input_array);
 	cudaFree(d_gpu_results);
 	cudaFree(d_gpu_sums1);
