@@ -7,18 +7,17 @@
  * Bank Conflict Avoidance Optimisation
  *
  * Timings:
- * Block scan without BCAO
- * Block scan with BCAO
- * Full scan without BCAO
- * Full scan with BCAO
+ * Block scan without BCAO - 0.07578ms
+ * Block scan with BCAO - 0.06144ms
+ * Full scan without BCAO - 11.38774ms
+ * Full scan with BCAO - 11.56349ms
  *
  * Hardware:
  * CPU - Intel - Core i5-6600 3.3GHz Quad-Core Processor
  * GPU - Zotac - GeForce GTX 1080 8GB AMP! Edition Video Card
  *
  * Implementation details:
- * TODO Any details or performance strategies I implemented which improve upon a base level of the target goals
- * I spent 26 total hours on this.
+ * I spent over 30 total hours on this.
  */
 
 #include <stdio.h>
@@ -48,7 +47,7 @@ inline void gpuAssert(cudaError_t code, const char *file, int line, bool abort=t
 #define NUM_BANKS 32
 #define LOG_NUM_BANKS 5
 #define CONFLICT_FREE_OFFSET(n) \
-    ((n) >> NUM_BANKS + (n) >> (2 * LOG_NUM_BANKS))
+    ((n) >> LOG_NUM_BANKS + (n) >> (2 * LOG_NUM_BANKS))
 
 __global__ void
 block(int *g_odata, int *g_idata, int n)
@@ -156,7 +155,6 @@ full(int *g_odata, int *g_idata, int n, int stride, int *sums)
 			offset *= 2;
 		}
 		if (thid == 0) {
-			int block = blockIdx.x;
 			sums[blockIdx.x] = temp[stride-1];
 			temp[stride-1] = 0;
 		} // clear the last element
@@ -183,55 +181,52 @@ __global__ void
 full_bcao(int *g_odata, int *g_idata, int n, int stride, int *sums)
 {
 	__shared__ int temp[BLOCK_SIZE*2];  // allocated on invocation
-	int thid = threadIdx.x;
-	int real_index = thid + blockDim.x * blockIdx.x;
-	if(real_index < n){
-		int offset = 1;
-
-		int ai = real_index;
-		int bi = real_index + (stride/2);
-		int bankOffsetA = CONFLICT_FREE_OFFSET(ai);
-		int bankOffsetB = CONFLICT_FREE_OFFSET(bi);
-		temp[ai + bankOffsetA] = g_idata[ai];
-		temp[bi + bankOffsetB] = g_idata[bi];
-
-		for (int d = stride>>1; d > 0; d >>= 1)  // build sum in place up the tree
-		{
-			__syncthreads();
-			if (thid < d)
+		int thid = threadIdx.x;
+		int real_index = thid + blockDim.x * blockIdx.x;
+		if(real_index < n){
+			int offset = 1;
+			int ai = thid;
+			int bi = thid + (stride/2);
+			int bankOffsetA = CONFLICT_FREE_OFFSET(ai);
+			int bankOffsetB = CONFLICT_FREE_OFFSET(bi);
+			temp[ai + bankOffsetA] = g_idata[ai + blockIdx.x*stride];
+			temp[bi + bankOffsetB] = g_idata[bi + blockIdx.x*stride];
+			for (int d = stride>>1; d > 0; d >>= 1)  // build sum in place up the tree
 			{
-				int ai = offset*(2*thid+1)-1;
-				int bi = offset*(2*thid+2)-1;
-				ai += CONFLICT_FREE_OFFSET(ai);
-				bi += CONFLICT_FREE_OFFSET(bi);
-				temp[bi] += temp[ai];
+				__syncthreads();
+				if (thid < d)
+				{
+					int ai = offset*(2*thid+1)-1;
+					int bi = offset*(2*thid+2)-1;
+					ai += CONFLICT_FREE_OFFSET(ai);
+					bi += CONFLICT_FREE_OFFSET(bi);
+					temp[bi] += temp[ai];
+				}
+				offset *= 2;
 			}
-			offset *= 2;
-		}
-		if (thid == 0) {
-			sums[blockIdx.x] = temp[stride-1];
-			temp[stride - 1 + CONFLICT_FREE_OFFSET(stride - 1)] = 0;
-		}
-		for (int d = 1; d < stride; d *= 2) // traverse down tree & build scan
-		{
-			offset >>= 1;
-			__syncthreads();
-			if (thid < d)
+			if (thid == 0) {
+				sums[blockIdx.x] = temp[stride-1];
+				temp[stride - 1 + CONFLICT_FREE_OFFSET(stride - 1)] = 0;
+			} // clear the last element
+			for (int d = 1; d < stride; d *= 2) // traverse down tree & build scan
 			{
-				int ai = offset*(2*thid+1)-1;
-				int bi = offset*(2*thid+2)-1;
-				ai += CONFLICT_FREE_OFFSET(ai);
-				bi += CONFLICT_FREE_OFFSET(bi);
-
-				int t = temp[ai];
-				temp[ai] = temp[bi];
-				temp[bi] += t;
+				offset >>= 1;
+				__syncthreads();
+				if (thid < d)
+				{
+					int ai = offset*(2*thid+1)-1;
+					int bi = offset*(2*thid+2)-1;
+					ai += CONFLICT_FREE_OFFSET(ai);
+					bi += CONFLICT_FREE_OFFSET(bi);
+					int t = temp[ai];
+					temp[ai] = temp[bi];
+					temp[bi] += t;
+				}
 			}
+			__syncthreads();
+			g_odata[ai + blockIdx.x * stride] = temp[ai + bankOffsetA];
+			g_odata[bi + blockIdx.x * stride] = temp[bi + bankOffsetB];
 		}
-		__syncthreads();
-		g_odata[ai] = temp[ai + bankOffsetA];
-		g_odata[bi] = temp[bi + bankOffsetB];
-	}
 }
 
 __global__ void
