@@ -7,10 +7,10 @@
  * Bank Conflict Avoidance Optimisation
  *
  * Timings:
- * Block scan without BCAO - 0.07578ms
+ * Block scan without BCAO - 0.07318ms
  * Block scan with BCAO - 0.06144ms
- * Full scan without BCAO - 11.38774ms
- * Full scan with BCAO - 11.56349ms
+ * Full scan without BCAO - 11.66432ms
+ * Full scan with BCAO - 11.51482ms
  *
  * Hardware:
  * CPU - Intel - Core i5-6600 3.3GHz Quad-Core Processor
@@ -575,7 +575,7 @@ int full_bcao(void){
 	if (compare_results(h_host_results, h_gpu_results, 10000)){
 		printf("Whole thing failed");
 	} else {
-		printf("full: %.5fms\n", time_fscan);
+		printf("full_bcao: %.5fms\n", time_fscan);
 	}
 	cudaDeviceSynchronize();
 
