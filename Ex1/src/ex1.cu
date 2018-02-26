@@ -179,6 +179,15 @@ full(int *g_odata, int *g_idata, int n, int stride, int *sums)
 	}
 }
 
+__global__ void
+apply_block_ends(const int *block_ends, int *input, int in_length, int stride){
+	int thid = blockDim.x * blockIdx.x + threadIdx.x;
+	int input_i = thid + stride;
+	if(input_i < in_length){
+		input[input_i] += block_ends[input_i/stride];
+	}
+}
+
 static int compare_results(const int *host, const int *device, int num_elements)
 {
 	for (int i = 0; i < num_elements; ++i){
@@ -226,7 +235,7 @@ int full(void){
 	}
 
 	// Check host vectors are as expected
-	printf("%d %d %d %d %d\n", h_input_array[0], h_input_array[1], h_input_array[2], h_input_array[total_elements-1], h_input_array[total_elements]);
+	printf("%d %d %d %d\n", h_input_array[0], h_input_array[1], h_input_array[2], h_input_array[total_elements-1]);
 	printf("%d %d %d %d\n", h_host_results[0], h_host_results[1], h_host_results[2], h_host_results[total_elements-1]);
 
 
@@ -359,7 +368,28 @@ int full(void){
 	CUDA_ERROR(cudaMemcpy(h_scan3_results, d_scan3_results, size3_padded, cudaMemcpyDeviceToHost), "Failed to copy scan3 results to host.");
 
 
+	// *********** 4. Add sums sums to sums ****************
+	int add1_grid = 1 + (sums2_length-1)/stride;
+	int add1_block = stride/2;
+	apply_block_ends<<<add1_grid, add1_block>>>(d_scan3_results, d_scan2_results, scan2_length, stride);
+	cudaDeviceSynchronize();
+	gpuErrchk(cudaGetLastError());
 
+	// *********** 5. Add sums to results ****************
+	int add2_grid = 1 + (sums1_length-1)/stride;
+	int add2_block = stride/2;
+	apply_block_ends<<<add2_grid, add2_block>>>(d_scan2_results, d_gpu_results, total_elements, stride);
+	cudaDeviceSynchronize();
+	gpuErrchk(cudaGetLastError());
+
+	// *********** Final test ********************
+	CUDA_ERROR(cudaMemcpy(h_gpu_results, d_gpu_results, size_padded, cudaMemcpyDeviceToHost), "Failed to copy scan3 results to host.");
+	if (compare_results(h_host_results, h_gpu_results, total_elements)){
+		printf("first full scan failed");
+	}
+
+	printf("%d %d %d %d\n", h_gpu_results[0], h_gpu_results[1], h_gpu_results[2], h_gpu_results[total_elements-1]);
+	fflush(stdout);
 	// *********** CLEANUP ***********************
 	cudaFree(d_input_array);
 	cudaFree(d_gpu_results);
