@@ -249,7 +249,7 @@ int full(void){
 	size_t sums1_size = sums1_length_padded * sizeof(int);
 	CUDA_ERROR(cudaMalloc((void **) &d_gpu_sums1, sums1_size), "Failed to allocate d_sum1");
 
-	int scan1_grid = total_padded/stride;
+	int scan1_grid = 1 + (total_padded-1)/stride;
 	int scan1_block = stride/2;
 
 	int *h_host_sums1 = (int *) malloc(sums1_size);
@@ -274,7 +274,7 @@ int full(void){
 	}
 
 	int *h_scan1_results = (int *) malloc(size_padded);
-	CUDA_ERROR(cudaMemcpy(h_scan1_results, d_gpu_results, size_padded, cudaMemcpyDeviceToHost), "Failed to copy sum1 results to host.");
+	CUDA_ERROR(cudaMemcpy(h_scan1_results, d_gpu_results, size_padded, cudaMemcpyDeviceToHost), "Failed to copy scan1 results to host.");
 
 
 	// *********** 2. Scan on the sums *****************
@@ -284,7 +284,7 @@ int full(void){
 	size_t sums2_size = sums2_length_padded * sizeof(int);
 	CUDA_ERROR(cudaMalloc((void **) &d_gpu_sums2, sums2_size), "Failed to allocate d_sum2");
 
-	int scan2_grid = sums1_length/stride;
+	int scan2_grid = 1+ (sums1_length-1)/stride;
 	int scan2_block = stride/2;
 
 	int *h_host_sums2 = (int *) malloc(sums2_size);
@@ -314,6 +314,49 @@ int full(void){
 		printf("first full scan failed");
 	}
 
+	int *h_scan2_results = (int *) malloc(size2_padded);
+	CUDA_ERROR(cudaMemcpy(h_scan2_results, d_scan2_results, size2_padded, cudaMemcpyDeviceToHost), "Failed to copy scan2 results to host.");
+
+
+	// *********** 3. Scan on the sums sums *****************
+	int *d_gpu_sums3 = NULL;
+	int sums3_length = sums2_length/stride;
+	int sums3_length_padded = (sums3_length % 2048 == 0) ? sums3_length : sums3_length + (stride - sums3_length % stride);
+	size_t sums3_size = sums3_length_padded * sizeof(int);
+	CUDA_ERROR(cudaMalloc((void **) &d_gpu_sums3, 2048*sizeof(int)), "Failed to allocate d_gpu_sums3"); //Must be large enough to avoid memory access exception, this array is acutally redundant in the 3rd cycle.
+
+	int scan3_grid = 1 + (sums2_length-1)/stride;
+	int scan3_block = stride/2;
+
+	int *h_host_sums3 = (int *) malloc(sums3_size);
+	count = 0;
+	for(int i = 0; i < sums2_length/stride; i++){
+		count = 0;
+		for(int j = 0; j < stride; j++){
+			count += h_scan1_results[i*stride + j];
+		}
+		h_host_sums3[i] = count;
+	}
+	int *h_gpu_sums3 = (int *) malloc(sums3_size);
+
+	int scan3_length = total_elements/stride;
+	int scan3_padded = (scan3_length % stride == 0) ? scan3_length : scan3_length + (stride - scan3_length % stride);
+	size_t size3_padded = scan3_padded * sizeof(int);
+
+	int *d_scan3_results = NULL;
+	CUDA_ERROR(cudaMalloc((void **) &d_scan3_results, size3_padded), "Failed to allocate d_sum3");
+
+	full<<<scan3_grid, scan3_block>>>(d_scan3_results, d_scan2_results, sums2_length_padded, stride, d_gpu_sums3);
+	cudaDeviceSynchronize();
+	gpuErrchk(cudaGetLastError());
+
+	CUDA_ERROR(cudaMemcpy(h_gpu_sums3, d_gpu_sums3, sums3_size, cudaMemcpyDeviceToHost), "Failed to copy sum3 results to host.");
+	if (compare_results(h_host_sums3, h_gpu_sums3, sums3_length)){
+		printf("first full scan failed");
+	}
+
+	int *h_scan3_results = (int *) malloc(size3_padded);
+	CUDA_ERROR(cudaMemcpy(h_scan3_results, d_scan3_results, size3_padded, cudaMemcpyDeviceToHost), "Failed to copy scan3 results to host.");
 
 
 
