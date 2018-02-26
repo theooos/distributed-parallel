@@ -314,14 +314,14 @@ int full(void){
 	int *d_scan2_results = NULL;
 	CUDA_ERROR(cudaMalloc((void **) &d_scan2_results, size2_padded), "Failed to allocate d_sum2");
 
-	full<<<scan2_grid, scan2_block>>>(d_scan2_results, d_gpu_results, sums1_length_padded, stride, d_gpu_sums2);
+	full<<<scan2_grid, scan2_block>>>(d_scan2_results, d_gpu_sums1, sums1_length_padded, stride, d_gpu_sums2);
 	cudaDeviceSynchronize();
 	gpuErrchk(cudaGetLastError());
 
 	CUDA_ERROR(cudaMemcpy(h_gpu_sums2, d_gpu_sums2, sums2_size, cudaMemcpyDeviceToHost), "Failed to copy sum2 results to host.");
-	if (compare_results(h_host_sums2, h_gpu_sums2, sums2_length)){
-		printf("first full scan failed");
-	}
+//	if (compare_results(h_host_sums2, h_gpu_sums2, sums2_length)){
+//		printf("second full scan failed");
+//	}
 
 	int *h_scan2_results = (int *) malloc(size2_padded);
 	CUDA_ERROR(cudaMemcpy(h_scan2_results, d_scan2_results, size2_padded, cudaMemcpyDeviceToHost), "Failed to copy scan2 results to host.");
@@ -355,41 +355,41 @@ int full(void){
 	int *d_scan3_results = NULL;
 	CUDA_ERROR(cudaMalloc((void **) &d_scan3_results, size3_padded), "Failed to allocate d_sum3");
 
-	full<<<scan3_grid, scan3_block>>>(d_scan3_results, d_scan2_results, sums2_length_padded, stride, d_gpu_sums3);
+	full<<<scan3_grid, scan3_block>>>(d_scan3_results, d_gpu_sums2, sums2_length_padded, stride, d_gpu_sums3);
 	cudaDeviceSynchronize();
 	gpuErrchk(cudaGetLastError());
 
 	CUDA_ERROR(cudaMemcpy(h_gpu_sums3, d_gpu_sums3, sums3_size, cudaMemcpyDeviceToHost), "Failed to copy sum3 results to host.");
-	if (compare_results(h_host_sums3, h_gpu_sums3, sums3_length)){
-		printf("first full scan failed");
-	}
+//	if (compare_results(h_host_sums3, h_gpu_sums3, sums3_length)){
+//		printf("third full scan failed");
+//	}
 
 	int *h_scan3_results = (int *) malloc(size3_padded);
 	CUDA_ERROR(cudaMemcpy(h_scan3_results, d_scan3_results, size3_padded, cudaMemcpyDeviceToHost), "Failed to copy scan3 results to host.");
 
 
 	// *********** 4. Add sums sums to sums ****************
-	int add1_grid = 1 + (sums2_length-1)/stride;
+	int add1_grid = 1 + (sums1_length-1)/BLOCK_SIZE;
 	int add1_block = stride/2;
 	apply_block_ends<<<add1_grid, add1_block>>>(d_scan3_results, d_scan2_results, scan2_length, stride);
 	cudaDeviceSynchronize();
 	gpuErrchk(cudaGetLastError());
 
+
 	// *********** 5. Add sums to results ****************
-	int add2_grid = 1 + (sums1_length-1)/stride;
-	int add2_block = stride/2;
+	int add2_grid = 1 + (total_elements-1)/BLOCK_SIZE;
+	int add2_block = BLOCK_SIZE;
 	apply_block_ends<<<add2_grid, add2_block>>>(d_scan2_results, d_gpu_results, total_elements, stride);
 	cudaDeviceSynchronize();
 	gpuErrchk(cudaGetLastError());
 
 	// *********** Final test ********************
-	CUDA_ERROR(cudaMemcpy(h_gpu_results, d_gpu_results, size_padded, cudaMemcpyDeviceToHost), "Failed to copy scan3 results to host.");
-	if (compare_results(h_host_results, h_gpu_results, total_elements)){
-		printf("first full scan failed");
+	CUDA_ERROR(cudaMemcpy(h_gpu_results, d_gpu_results, size, cudaMemcpyDeviceToHost), "Failed to copy scan3 results to host.");
+	cudaDeviceSynchronize();
+	if (compare_results(h_host_results, h_gpu_results, 10000)){
+		printf("Whole thing failed");
 	}
 
-	printf("%d %d %d %d\n", h_gpu_results[0], h_gpu_results[1], h_gpu_results[2], h_gpu_results[total_elements-1]);
-	fflush(stdout);
 	// *********** CLEANUP ***********************
 	cudaFree(d_input_array);
 	cudaFree(d_gpu_results);
